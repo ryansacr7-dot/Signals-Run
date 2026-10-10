@@ -1,6 +1,6 @@
 name: Build and Deploy iOS Game
-on: push: branches: [ main, master ] # Triggers automatically when you update your code
-jobs: deploy-ios: runs-on: macos-14 # Provisions a cloud Mac automatically for free steps: - name: Checkout Code uses: actions/checkout@v4
+on: push: branches: - main - master
+jobs: deploy-ios: runs-on: macos-14 steps: - name: Checkout Code uses: actions/checkout@v4
   - name: Set up Node.js
     uses: actions/setup-node@v4
     with:
@@ -10,7 +10,6 @@ jobs: deploy-ios: runs-on: macos-14 # Provisions a cloud Mac automatically for f
     run: |
       npm init -y || true
       npm install @capacitor/core @capacitor/cli @capacitor/ios
-      # Initializes your unique bundle metadata matching your Apple portal setup
       npx cap init "Signals Run" "com.ryan.signalrun" --web-dir=. --no-open
       npx cap add ios
 
@@ -23,17 +22,13 @@ jobs: deploy-ios: runs-on: macos-14 # Provisions a cloud Mac automatically for f
       CERTIFICATE_PATH=$RUNNER_TEMP/build_certificate.p12
       PP_PATH=$RUNNER_TEMP/profile.mobileprovision
       KEYCHAIN_PATH=$RUNNER_TEMP/app-signing.keychain-db
-
       echo -n "$P12_BASE64" | base64 --decode -o $CERTIFICATE_PATH
       echo -n "$PROVISION_BASE64" | base64 --decode -o $PP_PATH
-
       security create-keychain -p "" $KEYCHAIN_PATH
       security set-keychain-settings -lut 21600 $KEYCHAIN_PATH
       security unlock-keychain -p "" $KEYCHAIN_PATH
-
       security import $CERTIFICATE_PATH -k $KEYCHAIN_PATH -P "$P12_PASSWORD" -T /usr/bin/codesign -T /usr/bin/productsign
       security set-key-partition-list -S apple-tool:,apple: -s -k "" $KEYCHAIN_PATH
-
       mkdir -p ~/Library/MobileDevice/Provisioning\ Profiles
       cp $PP_PATH ~/Library/MobileDevice/Provisioning\ Profiles/
 
@@ -43,22 +38,13 @@ jobs: deploy-ios: runs-on: macos-14 # Provisions a cloud Mac automatically for f
 
   - name: Update Xcode Build Settings Configuration
     run: |
-      # Links your team ID and profile strings directly inside the hidden compilation project layout
       XCODE_PROJ="ios/App/App.xcodeproj/project.pbxproj"
       sed -i '' 's/DEVELOPMENT_TEAM = "";/DEVELOPMENT_TEAM = "XL662VBNF4";/g' "$XCODE_PROJ"
       sed -i '' 's/PRODUCT_BUNDLE_IDENTIFIER = .*/PRODUCT_BUNDLE_IDENTIFIER = com.ryan.signalrun;/g' "$XCODE_PROJ"
-      echo "Done updating build profiles."
 
   - name: Build and Export App Bundle (.ipa)
     run: |
-      xcodebuild -workspace ios/App/App.xcworkspace \
-                 -scheme App \
-                 -sdk iphoneos \
-                 -configuration Release \
-                 -archivePath $RUNNER_TEMP/SignalsRun.xcarchive \
-                 archive \
-                 DEVELOPMENT_TEAM=XL662VBNF4
-
+      xcodebuild -workspace ios/App/App.xcworkspace -scheme App -sdk iphoneos -configuration Release -archivePath $RUNNER_TEMP/SignalsRun.xcarchive archive DEVELOPMENT_TEAM=XL662VBNF4
       cat <<EOF > $RUNNER_TEMP/ExportOptions.plist
       <?xml version="1.0" encoding="UTF-8"?>
       <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://apple.com">
@@ -78,11 +64,7 @@ jobs: deploy-ios: runs-on: macos-14 # Provisions a cloud Mac automatically for f
       </dict>
       </plist>
       EOF
-
-      xcodebuild -exportArchive \
-                 -archivePath $RUNNER_TEMP/SignalsRun.xcarchive \
-                 -exportOptionsPlist $RUNNER_TEMP/ExportOptions.plist \
-                 -exportPath $RUNNER_TEMP/build
+      xcodebuild -exportArchive -archivePath $RUNNER_TEMP/SignalsRun.xcarchive -exportOptionsPlist $RUNNER_TEMP/ExportOptions.plist -exportPath $RUNNER_TEMP/build
 
   - name: Upload Binary Package straight to App Store Connect
     env:
@@ -92,9 +74,4 @@ jobs: deploy-ios: runs-on: macos-14 # Provisions a cloud Mac automatically for f
     run: |
       mkdir -p ~/.appstoreconnect/private_keys
       echo "$API_KEY_CONTENT" > ~/.appstoreconnect/private_keys/AuthKey_$API_KEY_ID.p8
-      
-      xcrun altool --upload-app \
-                   -f $RUNNER_TEMP/build/App.ipa \
-                   -t ios \
-                   --apiKey "$API_KEY_ID" \
-                   --apiIssuer "$API_ISSUER_ID"
+      xcrun altool --upload-app -f $RUNNER_TEMP/build/App.ipa -t ios --apiKey "$API_KEY_ID" --apiIssuer "$API_ISSUER_ID"
