@@ -43,6 +43,68 @@ jobs:
           npx cap add ios
           npx cap sync ios
 
+      # Bakes your own app icon into the build. Must run AFTER "npx cap add ios",
+      # because that step regenerates the whole iOS project and would wipe it.
+      # Uses sips, which is built into macOS — no npm install, nothing to break.
+      - name: Apply App Icon
+        run: |
+          set -e
+          SRC="resources/icon.png"
+          if [ ! -f "$SRC" ]; then
+            echo "!!  $SRC not found — keeping the default icon."
+            echo "    Commit a 1024x1024 PNG (no transparency) to that path."
+            exit 0
+          fi
+
+          DIM=$(sips -g pixelWidth -g pixelHeight "$SRC" | awk '/pixel/{print $2}' | paste -sd'x' -)
+          echo "Source icon: $DIM"
+          if [ "$DIM" != "1024x1024" ]; then
+            echo "!!  Icon must be exactly 1024x1024. Got $DIM."
+            exit 1
+          fi
+          if sips -g hasAlpha "$SRC" | grep -q "hasAlpha: yes"; then
+            echo "    Icon has an alpha channel — flattening it, Apple rejects alpha."
+            sips -s format png --deleteColorManagementProperties "$SRC" --out "$RUNNER_TEMP/flat.png" >/dev/null
+            SRC="$RUNNER_TEMP/flat.png"
+          fi
+
+          SET="ios/App/App/Assets.xcassets/AppIcon.appiconset"
+          rm -rf "$SET"; mkdir -p "$SET"
+
+          gen () { sips -z "$1" "$1" "$SRC" --out "$SET/$2" >/dev/null; }
+          for S in 20 29 40 58 60 76 80 87 120 152 167 180 1024; do
+            gen $S "icon-${S}.png"
+          done
+
+          cat > "$SET/Contents.json" <<'JSON'
+          {
+            "images": [
+              { "size": "20x20",     "idiom": "iphone",       "filename": "icon-40.png",   "scale": "2x" },
+              { "size": "20x20",     "idiom": "iphone",       "filename": "icon-60.png",   "scale": "3x" },
+              { "size": "29x29",     "idiom": "iphone",       "filename": "icon-58.png",   "scale": "2x" },
+              { "size": "29x29",     "idiom": "iphone",       "filename": "icon-87.png",   "scale": "3x" },
+              { "size": "40x40",     "idiom": "iphone",       "filename": "icon-80.png",   "scale": "2x" },
+              { "size": "40x40",     "idiom": "iphone",       "filename": "icon-120.png",  "scale": "3x" },
+              { "size": "60x60",     "idiom": "iphone",       "filename": "icon-120.png",  "scale": "2x" },
+              { "size": "60x60",     "idiom": "iphone",       "filename": "icon-180.png",  "scale": "3x" },
+              { "size": "20x20",     "idiom": "ipad",         "filename": "icon-20.png",   "scale": "1x" },
+              { "size": "20x20",     "idiom": "ipad",         "filename": "icon-40.png",   "scale": "2x" },
+              { "size": "29x29",     "idiom": "ipad",         "filename": "icon-29.png",   "scale": "1x" },
+              { "size": "29x29",     "idiom": "ipad",         "filename": "icon-58.png",   "scale": "2x" },
+              { "size": "40x40",     "idiom": "ipad",         "filename": "icon-40.png",   "scale": "1x" },
+              { "size": "40x40",     "idiom": "ipad",         "filename": "icon-80.png",   "scale": "2x" },
+              { "size": "76x76",     "idiom": "ipad",         "filename": "icon-76.png",   "scale": "1x" },
+              { "size": "76x76",     "idiom": "ipad",         "filename": "icon-152.png",  "scale": "2x" },
+              { "size": "83.5x83.5", "idiom": "ipad",         "filename": "icon-167.png",  "scale": "2x" },
+              { "size": "1024x1024", "idiom": "ios-marketing","filename": "icon-1024.png", "scale": "1x" }
+            ],
+            "info": { "version": 1, "author": "xcode" }
+          }
+          JSON
+
+          echo "--- icon set written ---"
+          ls -la "$SET"
+
       # A build number Apple has not seen before. Every upload needs a unique one,
       # and the run number gives you that for free.
       - name: Set Version and Build Number
