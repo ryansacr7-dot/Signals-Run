@@ -73,6 +73,67 @@ jobs:
       # *development* profile first, and a development profile needs a registered
       # device — which a cloud runner does not have. Signing happens at export instead,
       # where the App Store profile needs no devices at all.
+      # Asks Apple what this key can actually do, so we stop guessing.
+      # Never fails the build — it is purely a report.
+      - name: Check what the API key can do
+        continue-on-error: true
+        env:
+          API_KEY_ID: ${{ secrets.APP_STORE_CONNECT_KEY_ID }}
+          API_ISSUER_ID: ${{ secrets.APP_STORE_CONNECT_ISSUER_ID }}
+          API_KEY_CONTENT: ${{ secrets.APP_STORE_CONNECT_API_KEY }}
+        run: |
+          npm install jsonwebtoken@9 --no-save --silent
+          node <<'JS'
+          const jwt = require('jsonwebtoken');
+          const key = process.env.API_KEY_CONTENT;
+          if(!key || !key.includes('BEGIN PRIVATE KEY')){
+            console.log('XX  The .p8 secret is empty or malformed.');
+            console.log('    It must include the BEGIN PRIVATE KEY and END PRIVATE KEY lines.');
+            process.exit(0);
+          }
+          const token = jwt.sign({}, key, {
+            algorithm: 'ES256', expiresIn: '10m',
+            issuer: process.env.API_ISSUER_ID,
+            audience: 'appstoreconnect-v1',
+            header: { alg:'ES256', kid: process.env.API_KEY_ID, typ:'JWT' }
+          });
+          const H = { Authorization: 'Bearer ' + token };
+          const base = 'https://api.appstoreconnect.apple.com/v1/';
+          (async () => {
+            // 1. is the key valid at all?
+            let r = await fetch(base + 'apps?limit=1', { headers: H });
+            console.log(r.ok ? 'OK  Key is valid and authenticating.'
+                             : 'XX  Key rejected (' + r.status + '). Wrong Key ID, Issuer ID or .p8.');
+            if(!r.ok) return;
+
+            // 2. can it see certificates? this is the cloud-signing permission
+            r = await fetch(base + 'certificates?limit=200', { headers: H });
+            if(r.ok){
+              const d = await r.json();
+              const dist = d.data.filter(c => /DISTRIBUTION/i.test(c.attributes.certificateType));
+              console.log('OK  Key can read certificates. Team has ' + d.data.length +
+                          ' total, ' + dist.length + ' distribution.');
+              if(dist.length === 0){
+                console.log('!!  No distribution certificate exists yet.');
+                console.log('    Cloud signing must create one, which needs an ADMIN key.');
+              }
+            } else {
+              console.log('XX  Key CANNOT read certificates (' + r.status + ').');
+              console.log('    This is the cloud signing permission error.');
+              console.log('    The key role is not Admin. Make a new Team Key with Access = Admin.');
+            }
+
+            // 3. does the app record exist in App Store Connect?
+            r = await fetch(base + 'apps?filter[bundleId]=com.ryan.signalrun', { headers: H });
+            if(r.ok){
+              const d = await r.json();
+              console.log(d.data.length
+                ? 'OK  App record found: ' + d.data[0].attributes.name
+                : 'XX  No app record for com.ryan.signalrun. Create it in App Store Connect > My Apps > + > New App.');
+            }
+          })();
+          JS
+
       - name: Archive (unsigned)
         run: |
           set -e
@@ -82,7 +143,7 @@ jobs:
                      -destination 'generic/platform=iOS' \
                      -archivePath "$RUNNER_TEMP/SignalsRun.xcarchive" \
                      DEVELOPMENT_TEAM=XL662VBNF4 \
-                     PRODUCT_BUNDLE_IDENTIFIER=com.ryan.signalrun \
+                     IPHONEOS_DEPLOYMENT_TARGET=15.0 \
                      CODE_SIGNING_ALLOWED=NO \
                      CODE_SIGNING_REQUIRED=NO \
                      CODE_SIGN_IDENTITY="" \
@@ -102,7 +163,8 @@ jobs:
           <plist version="1.0">
           <dict>
               <key>method</key>
-              <string>app-store</string>
+              <!-- "app-store" is deprecated; "app-store-connect" is the current name -->
+              <string>app-store-connect</string>
               <key>teamID</key>
               <string>XL662VBNF4</string>
               <key>signingStyle</key>
@@ -139,6 +201,10 @@ jobs:
           # without this TestFlight stalls on "Missing Compliance" and never
           # hands the build to testers
           uses-non-exempt-encryption: false
+          # Don't sit polling Apple for processing status. The upload itself is
+          # already complete by this point, and the API token expires during the
+          # long wait, which turns a successful upload into a red 401.
+          wait-for-processing: false
 
       # So you can download and inspect the build even if the upload is rejected
       - name: Keep the IPA as an artifact
