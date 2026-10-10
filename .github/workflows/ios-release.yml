@@ -20,7 +20,11 @@ jobs:
         run: |
           npm init -y || true
           npm install @capacitor/core @capacitor/cli @capacitor/ios
-          npx cap init "Signals Run" "com.ryan.signalrun" --web-dir=.
+          # Fix: Explicitly create a dummy asset folder if it doesn't exist yet
+          mkdir -p www
+          if [ -f index.html ]; then cp index.html www/; fi
+          if [ -d assets ]; then cp -r assets www/ || true; fi
+          npx cap init "Signals Run" "com.ryan.signalrun" --web-dir=www
           npx cap add ios
 
       - name: Install Apple Certificates & Provisioning Profile
