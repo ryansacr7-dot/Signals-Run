@@ -27,18 +27,9 @@ jobs:
       - name: Install Mobile Environment Wrapper
         run: |
           npm init -y || true
-          npm install @capacitor/core @capacitor/cli @capacitor/ios
+          # Forcing Capacitor v5 packages completely avoids version conflicts
+          npm install @capacitor/core@5 @capacitor/cli@5 @capacitor/ios@5
           npx cap init "Signals Run" "com.ryan.signalrun" --web-dir=www --no-open || npx cap init "Signals Run" "com.ryan.signalrun" --web-dir=www
-
-      - name: Force Modern iOS Target Settings
-        run: |
-          # Create an empty iOS folder skeleton first so we can modify its configurations safely
-          mkdir -p ios/App/App.xcodeproj
-          cat <<EOF > ios/App/App.xcodeproj/project.pbxproj
-          // Placeholder file to inject settings before adding native code
-          EOF
-          
-          # Force Capacitor to install using iOS 14.0 configuration rules
           npx cap add ios
 
       - name: Install Apple Certificates & Provisioning Profile
@@ -69,7 +60,6 @@ jobs:
           XCODE_PROJ="ios/App/App.xcodeproj/project.pbxproj"
           sed -i '' 's/DEVELOPMENT_TEAM = "";/DEVELOPMENT_TEAM = "XL662VBNF4";/g' "$XCODE_PROJ"
           sed -i '' 's/PRODUCT_BUNDLE_IDENTIFIER = .*/PRODUCT_BUNDLE_IDENTIFIER = com.ryan.signalrun;/g' "$XCODE_PROJ"
-          sed -i '' 's/IPHONEOS_DEPLOYMENT_TARGET = .*;/IPHONEOS_DEPLOYMENT_TARGET = 14.0;/g' "$XCODE_PROJ"
 
       - name: Build and Export App Bundle (.ipa)
         run: |
