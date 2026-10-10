@@ -20,7 +20,7 @@ jobs:
         run: |
           npm init -y || true
           npm install @capacitor/core @capacitor/cli @capacitor/ios
-          npx cap init "Signals Run" "com.ryan.signalrun" --web-dir=. --no-open
+          npx cap init "Signals Run" "com.ryan.signalrun" --web-dir=.
           npx cap add ios
 
       - name: Install Apple Certificates & Provisioning Profile
