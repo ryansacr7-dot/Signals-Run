@@ -69,10 +69,11 @@ jobs:
           printf '%s\n' "$API_KEY_CONTENT" > "$HOME/.appstoreconnect/private_keys/AuthKey_${API_KEY_ID}.p8"
           head -1 "$HOME/.appstoreconnect/private_keys/AuthKey_${API_KEY_ID}.p8"
 
-      - name: Archive
-        env:
-          API_KEY_ID: ${{ secrets.APP_STORE_CONNECT_KEY_ID }}
-          API_ISSUER_ID: ${{ secrets.APP_STORE_CONNECT_ISSUER_ID }}
+      # Archive WITHOUT signing. With automatic signing, xcodebuild tries to make a
+      # *development* profile first, and a development profile needs a registered
+      # device — which a cloud runner does not have. Signing happens at export instead,
+      # where the App Store profile needs no devices at all.
+      - name: Archive (unsigned)
         run: |
           set -e
           xcodebuild -workspace ios/App/App.xcworkspace \
@@ -80,16 +81,16 @@ jobs:
                      -configuration Release \
                      -destination 'generic/platform=iOS' \
                      -archivePath "$RUNNER_TEMP/SignalsRun.xcarchive" \
-                     -allowProvisioningUpdates \
-                     -authenticationKeyID "$API_KEY_ID" \
-                     -authenticationKeyIssuerID "$API_ISSUER_ID" \
-                     -authenticationKeyPath "$HOME/.appstoreconnect/private_keys/AuthKey_${API_KEY_ID}.p8" \
                      DEVELOPMENT_TEAM=XL662VBNF4 \
                      PRODUCT_BUNDLE_IDENTIFIER=com.ryan.signalrun \
-                     CODE_SIGN_STYLE=Automatic \
+                     CODE_SIGNING_ALLOWED=NO \
+                     CODE_SIGNING_REQUIRED=NO \
+                     CODE_SIGN_IDENTITY="" \
+                     CODE_SIGN_ENTITLEMENTS="" \
                      archive
 
-      - name: Export IPA
+      # Signing happens here, with the App Store profile
+      - name: Export IPA (signed for the App Store)
         env:
           API_KEY_ID: ${{ secrets.APP_STORE_CONNECT_KEY_ID }}
           API_ISSUER_ID: ${{ secrets.APP_STORE_CONNECT_ISSUER_ID }}
