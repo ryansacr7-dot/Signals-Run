@@ -1,6 +1,4 @@
-name: Build and Deploy iOS Game
-on: push: branches: - main - master
-jobs: deploy-ios: runs-on: macos-14 steps: - name: Checkout Code uses: actions/checkout@v4
+name: Build and Deploy iOS Game on: push: branches: - main - master jobs: deploy-ios: runs-on: macos-14 steps: - name: Checkout Code uses: actions/checkout@v4
   - name: Set up Node.js
     uses: actions/setup-node@v4
     with:
